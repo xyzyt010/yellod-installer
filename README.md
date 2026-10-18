@@ -93,6 +93,19 @@ journalctl -u yellod-quicshare -f
 
 See [docs/SECURITY.md](docs/SECURITY.md) for details and [docs/CLOUDFLARE-TUNNEL.md](docs/CLOUDFLARE-TUNNEL.md) for the public-access guide.
 
+## Troubleshooting
+
+* The wizard is keyboard-driven: **Up/Down** move, **Space** toggles
+  checkboxes, **Enter** confirms and goes to the next step, and pressing
+  Enter on the last screen starts the installation and turns the services on.
+* It works the same whether you run the one-liner or download `install.sh`
+  first. When started from a pipe, the installer re-attaches your terminal
+  automatically so the keys always reach the wizard.
+* No real terminal (from a script, cron, CI)? Run it with `--yes` for the
+  non-interactive defaults.
+* To watch what happened: `journalctl -u yellod-downloader -n 50` and
+  `journalctl -u yellod-quicshare -n 50`.
+
 ## Requirements for building from source (fallback)
 
 `git`, a C toolchain and Rust — the installer sets up rustup automatically if a prebuilt release is not available.

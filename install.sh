@@ -22,7 +22,9 @@ if [ -n "$_src" ] && [ -f "$_src" ]; then
 fi
 
 if [ -z "$SELF_DIR" ]; then
-  # Running from a pipe (curl | bash): fetch the rest of the repo.
+  # Running from a pipe (curl | bash): stdin is the script itself, so the
+  # wizard cannot read the keyboard from it. Fetch the rest of the repo,
+  # then re-exec with the terminal attached to stdin.
   if ! command -v curl >/dev/null 2>&1; then
     if command -v apt-get >/dev/null 2>&1; then
       apt-get update -qq && apt-get install -y -qq curl
@@ -35,6 +37,17 @@ if [ -z "$SELF_DIR" ]; then
   echo "[info] Fetching installer files..."
   curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_SELF" --strip-components=1
   SELF_DIR="$TMP_SELF"
+  export YELLOD_BOOTSTRAP_TMP="$TMP_SELF"
+
+  if [ -e /dev/tty ] && ( : < /dev/tty ) 2>/dev/null; then
+    echo "[info] Attaching your terminal and starting the wizard..."
+    exec bash "${SELF_DIR}/install.sh" "$@" < /dev/tty
+  fi
+fi
+
+# Clean up the bootstrap copy when the re-exec'd installer exits.
+if [ -n "${YELLOD_BOOTSTRAP_TMP:-}" ]; then
+  trap 'rm -rf "$YELLOD_BOOTSTRAP_TMP"' EXIT
 fi
 
 # shellcheck source=lib/common.sh
