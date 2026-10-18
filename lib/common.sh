@@ -38,7 +38,7 @@ run() {
 # ---------------------------------------------------------------- detection
 need_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    die "Please run as root:  curl -fsSL ${GH_URL}/${REPO_INSTALLER}/raw/main/install.sh | sudo bash"
+    die "Please run as root:  sudo bash -c \"\$(curl -fsSL ${GH_URL}/${REPO_INSTALLER}/raw/main/install.sh)\""
   fi
 }
 

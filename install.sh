@@ -3,7 +3,8 @@
 # server apps (Yellod Downloader + QuicShare) on Ubuntu/Debian,
 # x86_64 and arm64.
 #
-#   curl -fsSL https://raw.githubusercontent.com/xyzyt010/yellod-installer/main/install.sh | sudo bash
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/xyzyt010/yellod-installer/main/install.sh)"
+#   curl -fsSL <same url> | sudo bash -s -- --yes     (non-interactive)
 #
 set -euo pipefail
 
@@ -38,6 +39,45 @@ if [ -z "$SELF_DIR" ]; then
   curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMP_SELF" --strip-components=1
   SELF_DIR="$TMP_SELF"
   export YELLOD_BOOTSTRAP_TMP="$TMP_SELF"
+
+  RAW_URL="https://raw.githubusercontent.com/${GH_OWNER}/${INSTALLER_REPO}/main/install.sh"
+
+  # Detect the one case where the wizard cannot receive your keyboard:
+  # 'curl | sudo bash' on sudo >= 1.9.14 (use_pty default) gives the piped
+  # command its own private terminal, so keystrokes never reach us.
+  if [ -n "${SUDO_USER:-}" ] && [ ! -t 0 ]; then
+    case " $* " in
+      *" --yes "*|*" -y "*|*" --update "*|*" --uninstall "*)
+        : # non-interactive mode: no keyboard needed, carry on
+        ;;
+      *)
+        parent_comm="$(cat "/proc/${PPID}/comm" 2>/dev/null || true)"
+        case "$parent_comm" in
+          sudo*)
+            our_tty="$(stat -L -c '%d:%i' /dev/tty 2>/dev/null || echo none)"
+            parent_tty="$(stat -L -c "%d:%i" "/proc/${PPID}/fd/1" 2>/dev/null || echo other)"
+            if [ "$our_tty" != "$parent_tty" ]; then
+              echo
+              echo "[warn] Your keyboard cannot reach the setup wizard this way:"
+              echo "       'curl | sudo bash' runs the script on a private terminal"
+              echo "       (sudo use_pty) so no keys get through."
+              echo
+              echo "       Run the same installer as a normal command instead:"
+              echo
+              echo "         sudo bash -c \"\$(curl -fsSL ${RAW_URL})\""
+              echo
+              echo "       or use the copy that was just downloaded for you:"
+              echo
+              echo "         sudo bash ${TMP_SELF}/install.sh"
+              echo
+              echo "       (Want a non-interactive install from a pipe? Add --yes.)"
+              exit 1
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
 
   if [ -e /dev/tty ] && ( : < /dev/tty ) 2>/dev/null; then
     echo "[info] Attaching your terminal and starting the wizard..."

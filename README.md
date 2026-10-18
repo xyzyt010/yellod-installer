@@ -12,8 +12,14 @@ Everything runs as an **unprivileged service user** with **hardened systemd unit
 ## One command
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xyzyt010/yellod-installer/main/install.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/xyzyt010/yellod-installer/main/install.sh)"
 ```
+
+This form keeps your keyboard connected to the wizard. (`curl … | sudo bash`
+would break that: modern sudo — Ubuntu 24.04 / Mint 22 and newer — gives
+piped commands a *private terminal*, so interactive keys can never reach
+them. The installer detects that case and tells you the right command.
+Piped runs are still fine with `--yes` for unattended installs.)
 
 The wizard walks you through:
 
@@ -98,9 +104,11 @@ See [docs/SECURITY.md](docs/SECURITY.md) for details and [docs/CLOUDFLARE-TUNNEL
 * The wizard is keyboard-driven: **Up/Down** move, **Space** toggles
   checkboxes, **Enter** confirms and goes to the next step, and pressing
   Enter on the last screen starts the installation and turns the services on.
-* It works the same whether you run the one-liner or download `install.sh`
-  first. When started from a pipe, the installer re-attaches your terminal
-  automatically so the keys always reach the wizard.
+* Always start it as shown in **One command** (`sudo bash -c "$(curl …)"`)
+  or by downloading the script first (`sudo bash install.sh`). Modern sudo
+  (1.9.14+) runs *piped* commands on a private terminal where the wizard
+  cannot see any keys — if you pipe it anyway, the installer detects that
+  and prints the command to use instead.
 * No real terminal (from a script, cron, CI)? Run it with `--yes` for the
   non-interactive defaults.
 * To watch what happened: `journalctl -u yellod-downloader -n 50` and

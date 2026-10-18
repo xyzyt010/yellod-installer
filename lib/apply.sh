@@ -251,7 +251,7 @@ do_update() {
 
   if [ "$updated" = "false" ]; then
     warn "Nothing seems installed (no Yellod systemd units found)."
-    warn "Run the installer first:  curl -fsSL ${GH_URL}/${REPO_INSTALLER}/raw/main/install.sh | sudo bash"
+    warn "Run the installer first:  sudo bash -c \"\$(curl -fsSL ${GH_URL}/${REPO_INSTALLER}/raw/main/install.sh)\""
     return 1
   fi
 
