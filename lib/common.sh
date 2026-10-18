@@ -76,6 +76,18 @@ have_systemd() {
   command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
 
+# Read Environment=KEY=... from a rendered systemd unit (used by --update to
+# keep the settings of an existing installation).
+unit_env() {
+  [ -r "$1" ] || return 0
+  sed -n "s/^Environment=$2=//p" "$1" | head -n1
+}
+
+unit_value() {
+  [ -r "$1" ] || return 0
+  sed -n "s/^$2=//p" "$1" | head -n1
+}
+
 # ---------------------------------------------------------------------- apt
 APT_UPDATED=false
 apt_update_once() {
@@ -84,6 +96,31 @@ apt_update_once() {
     run apt-get update -qq
     APT_UPDATED=true
   fi
+}
+
+# ------------------------------------------------------- dependency helpers
+pkg_installed() {
+  command -v dpkg-query >/dev/null 2>&1 && \
+    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+}
+
+# apt_install_missing <pkg...>
+# Installs only the packages that are not on the system yet and keeps
+# everything else exactly as it is (reuse-first, no needless downloads).
+apt_install_missing() {
+  local present=() missing=() p
+  for p in "$@"; do
+    if pkg_installed "$p"; then present+=("$p"); else missing+=("$p"); fi
+  done
+  if [ "${#present[@]}" -gt 0 ]; then
+    ok "Already installed, reusing: ${present[*]}"
+  fi
+  if [ "${#missing[@]}" -eq 0 ]; then
+    return 0
+  fi
+  apt_update_once
+  info "Installing missing packages: ${missing[*]}"
+  run env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
 }
 
 apt_install() {

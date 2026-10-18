@@ -112,6 +112,8 @@ QS_HOSTNAME=""
 FORCE_YES="false"
 PURGE_DATA="false"
 TUNNEL_GUIDE="no"
+PROXY_MODE="auto"
+PROXY_MODE_EXPLICIT="false"
 ARCH=""
 ARCH_TAG=""
 DL_BIND=""
@@ -139,6 +141,8 @@ Options:
   --quicshare-port N    QuicShare port (default: 443)
   --qs-bind ADDR        0.0.0.0 (default) or 127.0.0.1
   --hostname NAME       hostname for the QuicShare TLS certificate
+  --proxy-mode MODE     auto (default: direct first, Tor fallback) | always | never
+  --no-tor              same as --proxy-mode never (no Tor installed/used)
   --tunnel-guide        print the Cloudflare Tunnel guide after install
   --yes, -y             non-interactive (uses defaults / given options)
   --dry-run             show what would be done, change nothing
@@ -162,6 +166,8 @@ while [ $# -gt 0 ]; do
     --quicshare-port)  QS_PORT="${2:-}"; shift 2 ;;
     --qs-bind)         QS_BIND_MODE="${2:-}"; shift 2 ;;
     --hostname)        QS_HOSTNAME="${2:-}"; shift 2 ;;
+    --proxy-mode)      PROXY_MODE="${2:-}"; PROXY_MODE_EXPLICIT="true"; shift 2 ;;
+    --no-tor)          PROXY_MODE="never"; PROXY_MODE_EXPLICIT="true"; shift ;;
     --tunnel-guide)    TUNNEL_GUIDE="yes"; shift ;;
     --yes|-y)          FORCE_YES="true"; shift ;;
     --dry-run)         DRY_RUN="true"; shift ;;
@@ -191,6 +197,10 @@ validate_options() {
   case "$DATA_ROOT" in
     ""|/*) : ;;
     *) die "--data-dir must be an absolute path (got: ${DATA_ROOT})" ;;
+  esac
+  case "$PROXY_MODE" in
+    auto|always|never|on|off|tor|direct|none) : ;;
+    *) die "Invalid --proxy-mode: ${PROXY_MODE} (auto|always|never)" ;;
   esac
 }
 

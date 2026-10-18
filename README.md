@@ -26,8 +26,13 @@ The wizard walks you through:
 1. **Which apps** to install (Downloader, QuicShare or both)
 2. **Which disk/folder** stores your data — it lists your block devices (`lsblk`) and mount points with free space so you can pick your SSD/HDD
 3. **Ports** (Downloader `5555` on localhost; QuicShare `443`)
-4. **Public access** — optional Cloudflare Tunnel guide so QuicShare is reachable from anywhere
-5. A **summary**, then it installs everything and checks the services are healthy
+4. **How downloads are routed** — *Auto* (recommended): direct first, Tor as an automatic fallback when a site blocks this server; Tor is installed once and **reused** if the machine already has it
+5. **Public access** — optional Cloudflare Tunnel guide so QuicShare is reachable from anywhere
+6. A **summary**, then it installs everything and checks the services are healthy
+
+Dependencies are handled **reuse-first**: ffmpeg, aria2, yt-dlp, the JavaScript
+runtime (deno/node/bun) and Tor are only installed when missing — anything
+already on the system is kept and used as-is.
 
 After install, open the web UIs to view and manage your files — QuicShare shows exactly the files **you uploaded** (stored on your chosen disk), nothing else.
 
@@ -51,6 +56,9 @@ curl -fsSL .../install.sh | sudo bash -s -- --yes
 curl -fsSL .../install.sh | sudo bash -s -- --yes \
     --apps downloader --data-dir /mnt/ssd/yellod --downloader-port 6000
 
+# route downloads: auto (default) | always-through-Tor | never (direct only)
+curl -fsSL .../install.sh | sudo bash -s -- --yes --proxy-mode auto
+
 # see everything without changing the system
 sudo bash install.sh --dry-run --yes
 ```
@@ -60,7 +68,8 @@ Run `install.sh --help` for all options.
 ## Management
 
 ```bash
-# update to the latest release binaries
+# update to the latest release binaries (keeps your data + settings,
+# refreshes dependencies, rolls back automatically if a new build is unhealthy)
 curl -fsSL https://raw.githubusercontent.com/xyzyt010/yellod-installer/main/install.sh | sudo bash -s -- --update
 
 # uninstall (keeps your data)

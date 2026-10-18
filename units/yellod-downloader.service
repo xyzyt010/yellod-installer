@@ -3,6 +3,7 @@ Description=Yellod Downloader (media downloader web app)
 Documentation=https://github.com/xyzyt010/yellod-downloader
 After=network-online.target
 Wants=network-online.target
+@@TOR_UNIT@@
 
 [Service]
 Type=simple
@@ -15,6 +16,9 @@ Environment=DOWNLOADER_BIND_ADDRESS=@@BIND@@
 Environment=DOWNLOADER_OUTPUT_DIR=@@OUTPUT_DIR@@
 Environment=DOWNLOADER_COOKIES_PATH=@@COOKIES_PATH@@
 Environment=DOWNLOADER_DB_PATH=@@DB_PATH@@
+Environment=DOWNLOADER_PROXY_URL=@@PROXY_URL@@
+Environment=DOWNLOADER_PROXY_MODE=@@PROXY_MODE@@
+Environment=DOWNLOADER_YTDLP_BINARY=@@YTDLP_BIN@@
 ExecStart=@@INSTALL_ROOT@@/downloader/downloader
 Restart=always
 RestartSec=5

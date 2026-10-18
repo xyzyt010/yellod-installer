@@ -18,7 +18,7 @@ wiz_need_whiptail() {
 
 # ---------------------------------------------------------------- welcome
 wiz_welcome() {
-  whiptail --title "Yellod setup - step 1/6" --msgbox "Welcome to the Yellod server setup.
+  whiptail --title "Yellod setup - step 1/7" --msgbox "Welcome to the Yellod server setup.
 
 Detected system:
     OS:   ${DISTRO_PRETTY}
@@ -44,7 +44,7 @@ Press Enter to continue." 24 78 </dev/tty
 # ---------------------------------------------------------------- apps
 wiz_apps() {
   local sel
-  sel=$(whiptail --title "Yellod setup - step 2/6" --checklist \
+  sel=$(whiptail --title "Yellod setup - step 2/7" --checklist \
     "What should be installed?
 
 Up/Down = move   Space = toggle   Enter = continue" 16 76 4 \
@@ -57,7 +57,7 @@ Up/Down = move   Space = toggle   Enter = continue" 16 76 4 \
 
 # ---------------------------------------------------------------- storage
 wiz_storage() {
-  whiptail --title "Yellod setup - step 3/6" --msgbox \
+  whiptail --title "Yellod setup - step 3/7" --msgbox \
     "Where should your data live?
 
 Block devices detected on this machine:
@@ -92,7 +92,7 @@ Press Enter to choose the folder." 26 90 </dev/tty
   menu+=("custom"  "Custom path / other mount point..." "OFF")
 
   local choice
-  choice=$(whiptail --title "Yellod setup - step 3/6" --radiolist \
+  choice=$(whiptail --title "Yellod setup - step 3/7" --radiolist \
     "Select the disk/mount that should hold the data:
 
 Up/Down = move   Enter = confirm" 22 84 12 \
@@ -102,7 +102,7 @@ Up/Down = move   Enter = confirm" 22 84 12 \
     m*)       DATA_ROOT="${mounts[${choice#m}]%/}/yellod" ;;
     default)  DATA_ROOT="/srv/yellod" ;;
     custom)
-      DATA_ROOT=$(whiptail --title "Yellod setup - step 3/6" --inputbox \
+      DATA_ROOT=$(whiptail --title "Yellod setup - step 3/7" --inputbox \
         "Full path of the folder where data will be stored
 (must be on a mounted disk).
 Type a path, then press Enter:" 12 72 "/srv/yellod" \
@@ -128,7 +128,7 @@ Type a path, then press Enter:" 12 72 "/srv/yellod" \
 wiz_ports() {
   local val
   if app_selected downloader; then
-    val=$(whiptail --title "Yellod setup - step 4/6" --inputbox \
+    val=$(whiptail --title "Yellod setup - step 4/7" --inputbox \
       "Downloader web port (it listens on localhost only; expose it
 through a tunnel or reverse proxy for remote use).
 Type a port number, then press Enter:" 12 74 "5555" \
@@ -139,7 +139,7 @@ Type a port number, then press Enter:" 12 74 "5555" \
   fi
 
   if app_selected quicshare; then
-    val=$(whiptail --title "Yellod setup - step 4/6" --inputbox \
+    val=$(whiptail --title "Yellod setup - step 4/7" --inputbox \
       "QuicShare port (443 is the standard HTTPS port).
 Type a port number, then press Enter:" 11 72 "443" \
       3>&1 1>&2 2>&3 </dev/tty) || die "Setup cancelled."
@@ -147,7 +147,7 @@ Type a port number, then press Enter:" 11 72 "443" \
     QS_PORT="$val"
 
     local mode
-    mode=$(whiptail --title "Yellod setup - step 4/6" --radiolist \
+    mode=$(whiptail --title "Yellod setup - step 4/7" --radiolist \
       "How should QuicShare be reachable?
 
 Up/Down = move   Enter = confirm" 16 78 3 \
@@ -156,7 +156,7 @@ Up/Down = move   Enter = confirm" 16 78 3 \
       3>&1 1>&2 2>&3 </dev/tty) || die "Setup cancelled."
     QS_BIND_MODE="${mode:-all}"
 
-    QS_HOSTNAME=$(whiptail --title "Yellod setup - step 4/6" --inputbox \
+    QS_HOSTNAME=$(whiptail --title "Yellod setup - step 4/7" --inputbox \
       "Hostname or IP people will use to reach QuicShare
 (used for the TLS certificate; can be changed later).
 Type it, then press Enter:" 12 74 \
@@ -165,11 +165,32 @@ Type it, then press Enter:" 12 74 \
   fi
 }
 
+# ---------------------------------------------------------------- proxy
+# Only asked when the downloader is selected. "auto" is the useful default:
+# try a direct connection first and only route through Tor when the site
+# blocks this server. Tor is reused if already installed, otherwise it is
+# installed as a normal dependency.
+wiz_proxy() {
+  PROXY_MODE="auto"
+  if ! app_selected downloader; then
+    PROXY_MODE="never"
+    return 0
+  fi
+  local choice
+  choice=$(whiptail --title "Yellod setup - step 5/7" --radiolist \
+    "How should the downloader reach sites like YouTube?\n\nMost connections work directly. On blocked servers/regions the\ndownloader can fall back to Tor - nothing else changes. Tor is\ninstalled once and reused if it is already on this machine.\n\nUp/Down = move   Enter = confirm" 18 80 3 \
+    "auto"   "Auto - direct first, fall back to Tor when a site blocks us (recommended)" ON \
+    "always" "Always use Tor for every download" OFF \
+    "never"  "Never use a proxy - direct connections only" OFF \
+    3>&1 1>&2 2>&3 </dev/tty) || die "Setup cancelled."
+  PROXY_MODE="${choice:-auto}"
+}
+
 # ---------------------------------------------------------------- expose
 wiz_expose() {
   TUNNEL_GUIDE="no"
   if app_selected quicshare && [ "$QS_BIND_MODE" = "all" ]; then
-    if whiptail --title "Yellod setup - step 5/6" --yesno \
+    if whiptail --title "Yellod setup - step 6/7" --yesno \
       "Expose QuicShare to the internet with a Cloudflare Tunnel?
 
 No ports need to be opened on your router - a step-by-step guide
@@ -187,11 +208,19 @@ Enter = Yes (get the guide)      Esc = No" 16 78 </dev/tty; then
 
 # ---------------------------------------------------------------- summary
 wiz_summary() {
-  local txt dl_line qs_line
+  local txt dl_line qs_line route_line
   dl_line="disabled"
   qs_line="disabled"
   app_selected downloader && dl_line="http://127.0.0.1:${DL_PORT}  (localhost only)"
   app_selected quicshare && qs_line="https://${QS_HOSTNAME}:${QS_PORT}  (bind: ${QS_BIND_MODE})"
+  route_line="-"
+  if app_selected downloader; then
+    case "${PROXY_MODE:-auto}" in
+      auto)   route_line="auto - direct first, Tor fallback when blocked" ;;
+      always) route_line="always through Tor" ;;
+      never)  route_line="direct only" ;;
+    esac
+  fi
 
   txt="Please review:
 
@@ -200,6 +229,7 @@ wiz_summary() {
 
   Downloader:   ${dl_line}
   QuicShare:    ${qs_line}
+  Proxy route:  ${route_line}
 
   Tunnel guide: ${TUNNEL_GUIDE}
   Service user: ${SVC_USER}
@@ -207,7 +237,7 @@ wiz_summary() {
 Enter = install and turn services on now.
 Esc   = abort"
 
-  whiptail --title "Yellod setup - step 6/6" --yesno "$txt" 24 80 </dev/tty \
+  whiptail --title "Yellod setup - step 7/7" --yesno "$txt" 24 80 </dev/tty \
     || die "Aborted by user."
 }
 
@@ -217,6 +247,7 @@ wiz_run() {
   wiz_apps
   wiz_storage
   wiz_ports
+  wiz_proxy
   wiz_expose
   wiz_summary
 }
