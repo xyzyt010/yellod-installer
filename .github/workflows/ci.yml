@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check (bash -n)
+        run: |
+          bash -n install.sh
+          for f in lib/*.sh; do bash -n "$f"; done
+
+      - name: ShellCheck
+        run: |
+          shellcheck --severity=error install.sh lib/*.sh || true
+          # Fail only on hard errors
+          shellcheck --severity=error install.sh lib/*.sh

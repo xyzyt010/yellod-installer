@@ -1,0 +1,30 @@
+[Unit]
+Description=aria2 RPC daemon for Yellod Downloader
+After=network.target
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@USER@@
+Environment=HOME=@@LIB_DIR@@
+ExecStart=/usr/bin/aria2c --enable-rpc --rpc-listen-all=false --rpc-listen-port=6800 --disable-ipv6=true --max-connection-per-server=16 --split=16 --min-split-size=1M --dir=@@OUTPUT_DIR@@
+Restart=always
+RestartSec=5
+
+# --- hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=@@OUTPUT_DIR@@ @@LIB_DIR@@
+
+[Install]
+WantedBy=multi-user.target

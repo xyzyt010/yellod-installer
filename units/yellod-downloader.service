@@ -1,0 +1,40 @@
+[Unit]
+Description=Yellod Downloader (media downloader web app)
+Documentation=https://github.com/xyzyt010/yellod-downloader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@USER@@
+WorkingDirectory=@@INSTALL_ROOT@@/downloader
+Environment=RUST_LOG=downloader=info
+Environment=HOME=@@LIB_DIR@@
+Environment=DOWNLOADER_BIND_ADDRESS=@@BIND@@
+Environment=DOWNLOADER_OUTPUT_DIR=@@OUTPUT_DIR@@
+Environment=DOWNLOADER_COOKIES_PATH=@@COOKIES_PATH@@
+Environment=DOWNLOADER_DB_PATH=@@DB_PATH@@
+ExecStart=@@INSTALL_ROOT@@/downloader/downloader
+Restart=always
+RestartSec=5
+
+# --- hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=@@DATA_DOWNLOADER@@ @@LIB_DIR@@
+# Note: MemoryDenyWriteExecute is intentionally NOT set here because the
+# yt-dlp JavaScript runtime (deno/V8) requires W+X memory for its JIT.
+
+[Install]
+WantedBy=multi-user.target
