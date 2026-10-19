@@ -110,9 +110,12 @@ See [docs/SECURITY.md](docs/SECURITY.md) for details and [docs/CLOUDFLARE-TUNNEL
 
 ## Troubleshooting
 
-* The wizard is keyboard-driven: **Up/Down** move, **Space** toggles
-  checkboxes, **Enter** confirms and goes to the next step, and pressing
-  Enter on the last screen starts the installation and turns the services on.
+* The wizard is keyboard-driven and uses the same keys on every system:
+  **Up/Down** move the highlight; **Enter** (or **Space**) switches the
+  highlighted option on/off; **Tab** jumps to the green **Continue** row
+  (**Enter** there = next step); **a** selects/deselects all;
+  **Esc** quits (with a confirmation). On the last screen, **Enter**
+  starts the installation and turns the services on.
 * Always start it as shown in **One command** (`sudo bash -c "$(curl …)"`)
   or by downloading the script first (`sudo bash install.sh`). Modern sudo
   (1.9.14+) runs *piped* commands on a private terminal where the wizard

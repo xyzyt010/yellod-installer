@@ -92,6 +92,8 @@ fi
 
 # shellcheck source=lib/common.sh
 . "${SELF_DIR}/lib/common.sh"
+# shellcheck source=lib/tui.sh
+. "${SELF_DIR}/lib/tui.sh"
 # shellcheck source=lib/wizard.sh
 . "${SELF_DIR}/lib/wizard.sh"
 # shellcheck source=lib/apply.sh

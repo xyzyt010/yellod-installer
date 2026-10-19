@@ -239,7 +239,7 @@ validate_port() {
 }
 
 confirm_default_yes() {
-  # used only in non-whiptail contexts; the wizard handles interactivity
+  # non-interactive helper; the wizard (lib/tui.sh) handles interactivity
   return 0
 }
 
