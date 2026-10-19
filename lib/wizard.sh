@@ -5,7 +5,7 @@
 #
 #   Up/Down      move the highlight
 #   Enter/Space  select / deselect the highlighted option
-#   Tab          jump to the "Continue" row (Enter there = next step)
+#   Tab          jump to the Continue button (Enter there = next step)
 #   Esc          quit (with a confirmation)
 #
 # All pages read keys from the controlling terminal (/dev/tty), so the
@@ -40,17 +40,16 @@ Keys:  Up/Down move    Enter/Space select    Tab goes to Continue"
 
 # ---------------------------------------------------------------- apps
 wiz_apps() {
-  local sel
-  sel=$(tui_checklist "Yellod setup - step 2/7 - Applications" \
+  tui_checklist "Yellod setup - step 2/7 - Applications" \
     "What should be installed?
 
 Move with Up/Down, switch the highlighted app on/off with Enter or
-Space, then Tab to the Continue row and press Enter." \
+Space, then Tab to the Continue button and press Enter." \
     "downloader,quicshare" \
     downloader "Yellod Downloader - media downloader web app" \
-    quicshare  "QuicShare - file sharing server (uploads/downloads)")
-  APPS="$(printf '%s' "$sel" | tr ',' ' ')"
-  [ -n "$APPS" ] || die "Nothing selected - aborting."
+    quicshare  "QuicShare - file sharing server (uploads/downloads)"
+  APPS="$(printf '%s' "$TUI_RESULT" | tr ',' ' ')"
+  [ -n "$APPS" ] || tui_fatal "Nothing selected - aborting."
 }
 
 # ---------------------------------------------------------------- storage
@@ -89,29 +88,31 @@ then pick that mount point here."
   rl+=("custom|" "Custom path / other mount point...")
 
   local choice
-  choice=$(tui_radiolist "Yellod setup - step 3/7 - Storage" \
+  tui_radiolist "Yellod setup - step 3/7 - Storage" \
     "Select the disk/mount that should hold the data (Up/Down moves the
-selection, Enter confirms it)." "$default_tag" "${rl[@]}")
+selection, Enter confirms it)." "$default_tag" "${rl[@]}"
+  choice="$TUI_RESULT"
 
   case "$choice" in
     m*)       DATA_ROOT="${mounts[${choice#m}]%/}/yellod" ;;
     default)  DATA_ROOT="/srv/yellod" ;;
     custom)
-      DATA_ROOT=$(tui_input "Yellod setup - step 3/7 - Storage" \
+      tui_input "Yellod setup - step 3/7 - Storage" \
         "Full path of the folder where data will be stored
-(must be on a mounted disk)." "/srv/yellod" tui_validate_abs_path)
+(must be on a mounted disk)." "/srv/yellod" tui_validate_abs_path
+      DATA_ROOT="$TUI_RESULT"
       ;;
-    *) die "Setup cancelled." ;;
+    *) tui_fatal "Setup cancelled." ;;
   esac
 
   case "$DATA_ROOT" in
     /*) : ;;
-    *) die "Data folder must be an absolute path (got: $DATA_ROOT)" ;;
+    *) tui_fatal "Data folder must be an absolute path (got: $DATA_ROOT)" ;;
   esac
 
   if [ "$DRY_RUN" != "true" ]; then
     if ! mkdir -p "$DATA_ROOT" 2>/dev/null || ! : > "$DATA_ROOT/.yellod-write-test" 2>/dev/null; then
-      die "Cannot write to $DATA_ROOT - please pick another location."
+      tui_fatal "Cannot write to $DATA_ROOT - please pick another location."
     fi
     rm -f "$DATA_ROOT/.yellod-write-test"
   fi
@@ -119,33 +120,32 @@ selection, Enter confirms it)." "$default_tag" "${rl[@]}")
 
 # ---------------------------------------------------------------- ports
 wiz_ports() {
-  local val
   if app_selected downloader; then
-    val=$(tui_input "Yellod setup - step 4/7 - Ports" \
+    tui_input "Yellod setup - step 4/7 - Ports" \
       "Downloader web port (it listens on localhost only; expose it
 through a tunnel or reverse proxy for remote use)." \
-      "5555" tui_validate_port)
-    DL_PORT="$val"
+      "5555" tui_validate_port
+    DL_PORT="$TUI_RESULT"
     DL_BIND_MODE="localhost"
   fi
 
   if app_selected quicshare; then
-    val=$(tui_input "Yellod setup - step 4/7 - Ports" \
+    tui_input "Yellod setup - step 4/7 - Ports" \
       "QuicShare port (443 is the standard HTTPS port)." \
-      "443" tui_validate_port)
-    QS_PORT="$val"
+      "443" tui_validate_port
+    QS_PORT="$TUI_RESULT"
 
-    local mode
-    mode=$(tui_radiolist "Yellod setup - step 4/7 - Ports" \
+    tui_radiolist "Yellod setup - step 4/7 - Ports" \
       "How should QuicShare be reachable?" "all" \
       all       "All interfaces - other devices / internet via tunnel (recommended for sharing)" \
-      localhost "Localhost only - this machine only")
-    QS_BIND_MODE="$mode"
+      localhost "Localhost only - this machine only"
+    QS_BIND_MODE="$TUI_RESULT"
 
-    QS_HOSTNAME=$(tui_input "Yellod setup - step 4/7 - Ports" \
+    tui_input "Yellod setup - step 4/7 - Ports" \
       "Hostname or IP people will use to reach QuicShare
 (used for the TLS certificate; can be changed later)." \
-      "$(hostname -f 2>/dev/null || hostname)" tui_validate_not_empty)
+      "$(hostname -f 2>/dev/null || hostname)" tui_validate_not_empty
+    QS_HOSTNAME="$TUI_RESULT"
   fi
 }
 
@@ -160,8 +160,7 @@ wiz_proxy() {
     PROXY_MODE="never"
     return 0
   fi
-  local choice
-  choice=$(tui_radiolist "Yellod setup - step 5/7 - Routing" \
+  tui_radiolist "Yellod setup - step 5/7 - Routing" \
     "How should the downloader reach sites like YouTube?
 
 Most connections work directly. On blocked servers/regions the
@@ -169,30 +168,29 @@ downloader can fall back to Tor - nothing else changes. Tor is
 installed once and reused if it is already on this machine." "auto" \
     auto   "Auto - direct first, fall back to Tor when a site blocks us (recommended)" \
     always "Always use Tor for every download" \
-    never  "Never use a proxy - direct connections only")
-  PROXY_MODE="$choice"
+    never  "Never use a proxy - direct connections only"
+  PROXY_MODE="$TUI_RESULT"
 }
 
 # ---------------------------------------------------------------- expose
 wiz_expose() {
   TUNNEL_GUIDE="no"
   if app_selected quicshare && [ "$QS_BIND_MODE" = "all" ]; then
-    local sel
-    sel=$(tui_buttons "Yellod setup - step 6/7 - Public access" \
+    tui_buttons "Yellod setup - step 6/7 - Public access" \
       "Expose QuicShare to the internet with a Cloudflare Tunnel?
 
 No ports need to be opened on your router - a step-by-step guide
 will be printed at the end of the installation.
 
 (You can also skip this and use a tunnel/reverse proxy of your choice.)" \
-      0 "Yes, get the guide" "No, skip")
-    [ "$sel" = "0" ] && TUNNEL_GUIDE="yes"
+      0 "Yes, get the guide" "No, skip"
+    if [ "$TUI_RESULT" = "0" ]; then TUNNEL_GUIDE="yes"; fi
   fi
 }
 
 # ---------------------------------------------------------------- summary
 wiz_summary() {
-  local txt dl_line qs_line route_line sel
+  local txt dl_line qs_line route_line
   dl_line="disabled"
   qs_line="disabled"
   app_selected downloader && dl_line="http://127.0.0.1:${DL_PORT}  (localhost only)"
@@ -220,9 +218,9 @@ wiz_summary() {
 
 Enter = install and turn the services on now."
 
-  sel=$(tui_buttons "Yellod setup - step 7/7 - Review" "$txt" 0 \
-    "Install & start" "Cancel")
-  [ "$sel" = "0" ] || die "Aborted by user."
+  tui_buttons "Yellod setup - step 7/7 - Review" "$txt" 0 \
+    "Install & start" "Cancel"
+  [ "$TUI_RESULT" = "0" ] || tui_fatal "Aborted by user."
 }
 
 wiz_run() {
