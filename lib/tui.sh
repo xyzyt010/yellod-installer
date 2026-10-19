@@ -7,11 +7,12 @@
 # before - but with one consistent, predictable keyboard model:
 #
 #   Up/Down      move the highlight
-#   Enter/Space  select or deselect the highlighted option (checklists)
-#   a            select all / none (checklists)
-#   Tab          jump to the Continue button
-#   Enter        on the Continue button: go to the next step
+#   Space        select / deselect the highlighted option
+#   Enter        continue / confirm (activates the focused button)
+#   Tab          move the focus between the list and the buttons
 #   Esc          quit (asks for confirmation first)
+#
+# Pages that can go back show a < Back > button next to < Continue >.
 #
 # Pages are drawn on the controlling terminal (/dev/tty, fd 8) and read
 # keys from it byte-for-byte, so the same keys work on every machine and
@@ -29,6 +30,9 @@ TUI_FLASH=""
 TUI_KEY=""
 TUI_CHAR=""
 TUI_RESULT=""
+TUI_BACK=""
+TUI_ALLOW_BACK="0"
+TUI_FOCUS=""
 TUI_ROW=""
 TUI_PADDED=""
 TUI_PREV_EXIT_CMD=""
@@ -158,6 +162,7 @@ tui_read_key() {
             D) TUI_KEY="LEFT" ;;
             H) TUI_KEY="HOME" ;;
             F) TUI_KEY="END" ;;
+            Z) TUI_KEY="BACKTAB" ;;
             5|6|1|4)
               IFS= read -rsn1 -t 0.05 -u 8 _ || true
               case "$k2" in
@@ -240,6 +245,47 @@ tui_row_input() {
   local rest=""
   printf -v rest '%*s' "$((TUI_INNER_W - ${#value} - 3))" ''
   TUI_ROW="  ${before}${TUI_SEL}${at}${TUI_LINE}${after}${rest}"
+}
+
+# Renders a plain (non-editable) text row, padded to the box inner width.
+tui_row_text() { # text
+  local t="$1" maxv=$((TUI_INNER_W - 3)) rest
+  if [ "${#t}" -gt "$maxv" ]; then t="${t:0:$maxv}"; fi
+  printf -v rest '%*s' "$((TUI_INNER_W - ${#t} - 2))" ''
+  TUI_ROW="  ${t}${rest}"
+}
+
+# Cycles the button focus. $1 = current focus (content|back|continue),
+# $2 = allow_back (1/0), $3 = direction (1 = forward, -1 = backward).
+# Result in TUI_FOCUS.
+tui_focus_cycle() {
+  case "$1:$2:$3" in
+    content:1:1)   TUI_FOCUS="back" ;;
+    content:1:-1)  TUI_FOCUS="continue" ;;
+    content:0:*)   TUI_FOCUS="continue" ;;
+    back:*:1)      TUI_FOCUS="continue" ;;
+    back:*:-1)     TUI_FOCUS="content" ;;
+    continue:*:1)  TUI_FOCUS="content" ;;
+    continue:1:-1) TUI_FOCUS="back" ;;
+    *)             TUI_FOCUS="content" ;;
+  esac
+}
+
+# Renders the standard navigation row: < Back > < Continue > when the page
+# can go back, just < Continue > otherwise. $1 = focus. Result in TUI_ROW.
+tui_row_navbuttons() {
+  if [ "$TUI_ALLOW_BACK" = "1" ]; then
+    case "$1" in
+      back)     tui_row_buttons 0 "Back" "Continue" ;;
+      continue) tui_row_buttons 1 "Back" "Continue" ;;
+      *)        tui_row_buttons -1 "Back" "Continue" ;;
+    esac
+  else
+    case "$1" in
+      continue) tui_row_buttons 0 "Continue" ;;
+      *)        tui_row_buttons -1 "Continue" ;;
+    esac
+  fi
 }
 
 # -------------------------------------------------------------- drawing
@@ -351,12 +397,12 @@ tui_abort_confirm() {
     tui_row_buttons "$sel" "No, keep going" "Yes, quit setup"
     tui_add_raw "$TUI_ROW"
     tui_blank
-    tui_add_dim "  Left/Right choose   Enter = confirm"
+    tui_add_dim "  Left/Right move   Enter = confirm"
     tui_flush "Quit the setup?"
     tui_read_key
     case "$TUI_KEY" in
-      LEFT|RIGHT|TAB|UP|DOWN) sel=$((1 - sel)) ;;
-      ENTER|SPACE)
+      LEFT|RIGHT|TAB|BACKTAB|UP|DOWN) sel=$((1 - sel)) ;;
+      ENTER)
         if [ "$sel" -eq 1 ]; then
           tui_fatal "Setup cancelled."
         else
@@ -380,13 +426,16 @@ tui_text_page() { # title body
 }
 
 tui_pager() { # title file
+  TUI_BACK=""
   local title="$1" file="$2"
   local -a content=()
   mapfile -t content <"$file" 2>/dev/null || true
-  local total="${#content[@]}" offset=0 page maxoff i ind
+  local total="${#content[@]}" offset=0 page maxoff i ind focus="content" chrome
   while :; do
     tui_dims
-    page=$((TUI_ROWS - 10))
+    chrome=10
+    if [ "$TUI_ALLOW_BACK" = "1" ]; then chrome=11; fi
+    page=$((TUI_ROWS - chrome))
     if [ "$page" -lt 3 ]; then page=3; fi
     maxoff=$((total - page))
     if [ "$maxoff" -lt 0 ]; then maxoff=0; fi
@@ -401,16 +450,41 @@ tui_pager() { # title file
     if [ "$offset" -gt 0 ]; then ind="^ more above"; fi
     if [ "$offset" -lt "$maxoff" ]; then ind="${ind:+$ind   }v more below"; fi
     tui_add_dim "  ${ind}"
+    if [ "$TUI_ALLOW_BACK" = "1" ]; then
+      tui_row_navbuttons "$focus"
+      tui_add_raw "$TUI_ROW"
+    fi
     tui_add_dim "  Up/Down scroll   PgUp/PgDn   Enter = continue   Esc = quit"
     tui_flush "$title"
 
     tui_read_key
     case "$TUI_KEY" in
-      UP) offset=$((offset - 1)); if [ "$offset" -lt 0 ]; then offset=0; fi ;;
-      DOWN) offset=$((offset + 1)); if [ "$offset" -gt "$maxoff" ]; then offset="$maxoff"; fi ;;
-      PGUP) offset=$((offset - page)); if [ "$offset" -lt 0 ]; then offset=0; fi ;;
-      PGDN) offset=$((offset + page)); if [ "$offset" -gt "$maxoff" ]; then offset="$maxoff"; fi ;;
-      ENTER|TAB|SPACE|RIGHT) return 0 ;;
+      UP|PGUP|DOWN|PGDN)
+        if [ "$focus" = "content" ]; then
+          case "$TUI_KEY" in
+            UP) offset=$((offset - 1)); if [ "$offset" -lt 0 ]; then offset=0; fi ;;
+            DOWN) offset=$((offset + 1)); if [ "$offset" -gt "$maxoff" ]; then offset="$maxoff"; fi ;;
+            PGUP) offset=$((offset - page)); if [ "$offset" -lt 0 ]; then offset=0; fi ;;
+            PGDN) offset=$((offset + page)); if [ "$offset" -gt "$maxoff" ]; then offset="$maxoff"; fi ;;
+          esac
+        fi
+        ;;
+      TAB)
+        if [ "$TUI_ALLOW_BACK" = "1" ]; then tui_focus_cycle "$focus" 1 1; focus="$TUI_FOCUS"; fi
+        ;;
+      BACKTAB)
+        if [ "$TUI_ALLOW_BACK" = "1" ]; then tui_focus_cycle "$focus" 1 -1; focus="$TUI_FOCUS"; fi
+        ;;
+      LEFT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" 1 -1; focus="$TUI_FOCUS"; fi
+        ;;
+      RIGHT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" 1 1; focus="$TUI_FOCUS"; fi
+        ;;
+      ENTER)
+        if [ "$focus" = "back" ]; then TUI_BACK="1"; fi
+        return 0
+        ;;
       ESC) tui_abort_confirm ;;
       EOF) tui_fatal "Terminal closed - setup cancelled." ;;
       *) ;;
@@ -421,10 +495,11 @@ tui_pager() { # title file
 # ------------------------------------------------------------- checklist
 # tui_checklist TITLE INTRO DEFAULT_TAGS TAG DESC [TAG DESC ...]
 # TAG may be "tag|label" to show a friendly label instead of the tag.
-# Up/Down move, Enter/Space toggles the highlighted option, Tab jumps to
-# the Continue button; Enter there goes on. Result in TUI_RESULT.
+# Up/Down move the highlight, Space switches the highlighted option on/off,
+# Enter continues, Tab reaches the Back button. Result in TUI_RESULT;
+# going back is reported in TUI_BACK.
 tui_checklist() {
-  TUI_RESULT=""
+  TUI_RESULT=""; TUI_BACK=""
   local title="$1" intro="$2" default_csv="$3"; shift 3
   local -a tags=() labels=() descs=() checked=()
   local t d
@@ -438,7 +513,7 @@ tui_checklist() {
   done
   local n=${#tags[@]}
   [ "$n" -gt 0 ] || tui_fatal "tui_checklist: no options"
-  local idx=0 cont="$n" i
+  local idx=0 focus="content" i tabhint
   for i in "${!tags[@]}"; do
     case " ${default_csv//,/ } " in
       *" ${tags[$i]} "*) checked[i]=1 ;;
@@ -453,15 +528,15 @@ tui_checklist() {
     if [ -n "$intro" ]; then tui_add_wrapped "$intro"; fi
     tui_blank
     for i in "${!tags[@]}"; do
-      [ "${checked[$i]}" = "1" ] && mark="[X]" || mark="[ ]"
+      if [ "${checked[$i]}" = "1" ]; then mark="[X]"; else mark="[ ]"; fi
       pt=""
-      if [ "$idx" -eq "$i" ] && [ "$TUI_COLORS" != "1" ]; then pt=">"; fi
+      if [ "$idx" -eq "$i" ] && [ "$focus" = "content" ] && [ "$TUI_COLORS" != "1" ]; then pt=">"; fi
       if [ -n "${labels[$i]}" ]; then
         plain="$(printf '%s  %s %-12s %s' "$pt" "$mark" "${labels[$i]}" "${descs[$i]}")"
       else
         plain="$(printf '%s  %s %s' "$pt" "$mark" "${descs[$i]}")"
       fi
-      if [ "$idx" -eq "$i" ]; then
+      if [ "$idx" -eq "$i" ] && [ "$focus" = "content" ]; then
         tui_add_sel "$plain"
       else
         tui_add "$plain"
@@ -474,43 +549,57 @@ tui_checklist() {
     done
     sel_list="${sel_list%, }"
     tui_blank
-    if [ "$idx" -eq "$cont" ]; then
-      tui_row_buttons 0 "Continue"
-    else
-      tui_row_buttons -1 "Continue"
-    fi
+    tui_row_navbuttons "$focus"
     tui_add_raw "$TUI_ROW"
     tui_blank
+    if [ "$TUI_FLASH" = "1" ]; then
+      tui_add_err "  Select at least one option with Space, then continue."
+    fi
     [ -n "$sel_list" ] || sel_list="nothing selected yet"
     tui_add_dim "  chosen: ${sel_list}"
-    tui_add_dim "  Enter/Space = select   a = all/none   Tab = Continue   Esc = quit"
+    if [ "$TUI_ALLOW_BACK" = "1" ]; then tabhint="Tab = Back / Continue"; else tabhint="Tab = Continue"; fi
+    tui_add_dim "  Up/Down move   Space = select   Enter = continue"
+    tui_add_dim "  ${tabhint}   Esc = quit"
     tui_flush "$title"
 
     tui_read_key
     TUI_FLASH=""
     case "$TUI_KEY" in
-      UP) idx=$((idx - 1)); if [ "$idx" -lt 0 ]; then idx="$cont"; fi ;;
-      DOWN) idx=$((idx + 1)); if [ "$idx" -gt "$cont" ]; then idx=0; fi ;;
-      TAB) idx="$cont" ;;
-      ENTER|SPACE)
-        if [ "$idx" -eq "$cont" ]; then
-          if [ "$sel_count" -gt 0 ]; then
-            TUI_RESULT="$sel_list"
-            return 0
-          fi
-          TUI_FLASH="Select at least one option (Enter or Space), then continue."
-        else
+      UP)
+        if [ "$focus" = "content" ]; then
+          idx=$((idx - 1))
+          if [ "$idx" -lt 0 ]; then idx=$((n - 1)); fi
+        fi
+        ;;
+      DOWN)
+        if [ "$focus" = "content" ]; then
+          idx=$((idx + 1))
+          if [ "$idx" -ge "$n" ]; then idx=0; fi
+        fi
+        ;;
+      TAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS" ;;
+      BACKTAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS" ;;
+      LEFT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS"; fi
+        ;;
+      RIGHT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS"; fi
+        ;;
+      SPACE)
+        if [ "$focus" = "content" ]; then
           if [ "${checked[$idx]}" = "1" ]; then checked[idx]=0; else checked[idx]=1; fi
         fi
         ;;
-      CHAR)
-        if [ "$TUI_CHAR" = "a" ] || [ "$TUI_CHAR" = "A" ]; then
-          local all=1
-          for i in "${!tags[@]}"; do [ "${checked[$i]}" = "1" ] || all=0; done
-          for i in "${!tags[@]}"; do
-            if [ "$all" -eq 1 ]; then checked[i]=0; else checked[i]=1; fi
-          done
+      ENTER)
+        if [ "$focus" = "back" ]; then
+          TUI_BACK="1"
+          return 0
         fi
+        if [ "$sel_count" -gt 0 ]; then
+          TUI_RESULT="$sel_list"
+          return 0
+        fi
+        TUI_FLASH="1"
         ;;
       ESC) tui_abort_confirm ;;
       EOF) tui_fatal "Terminal closed - setup cancelled." ;;
@@ -522,10 +611,11 @@ tui_checklist() {
 # ------------------------------------------------------------- radiolist
 # tui_radiolist TITLE INTRO DEFAULT_TAG TAG DESC [TAG DESC ...]
 # TAG may be "tag|label" to show a friendly label instead of the tag.
-# Up/Down move the selection (it follows the highlight); Enter chooses and
-# continues. Result in TUI_RESULT.
+# Up/Down move the highlight, Space selects the highlighted entry, Enter
+# continues. Tab reaches the Back button. Result in TUI_RESULT; going back
+# is reported in TUI_BACK.
 tui_radiolist() {
-  TUI_RESULT=""
+  TUI_RESULT=""; TUI_BACK=""
   local title="$1" intro="$2" default_tag="$3"; shift 3
   local -a tags=() labels=() descs=()
   local t d
@@ -539,10 +629,11 @@ tui_radiolist() {
   done
   local n=${#tags[@]}
   [ "$n" -gt 0 ] || tui_fatal "tui_radiolist: no options"
-  local idx=0 i
+  local chosen=0 idx=0 i focus="content" tabhint
   for i in "${!tags[@]}"; do
-    if [ "${tags[$i]}" = "$default_tag" ]; then idx="$i"; fi
+    if [ "${tags[$i]}" = "$default_tag" ]; then chosen="$i"; fi
   done
+  idx="$chosen"
 
   local mark pt plain
   while :; do
@@ -551,29 +642,56 @@ tui_radiolist() {
     if [ -n "$intro" ]; then tui_add_wrapped "$intro"; fi
     tui_blank
     for i in "${!tags[@]}"; do
-      [ "$i" -eq "$idx" ] && mark="(*)" || mark="( )"
+      if [ "$i" -eq "$chosen" ]; then mark="(*)"; else mark="( )"; fi
       pt=""
-      if [ "$i" -eq "$idx" ] && [ "$TUI_COLORS" != "1" ]; then pt=">"; fi
+      if [ "$i" -eq "$idx" ] && [ "$focus" = "content" ] && [ "$TUI_COLORS" != "1" ]; then pt=">"; fi
       if [ -n "${labels[$i]}" ]; then
         plain="$(printf '%s  %s %-12s %s' "$pt" "$mark" "${labels[$i]}" "${descs[$i]}")"
       else
         plain="$(printf '%s  %s %s' "$pt" "$mark" "${descs[$i]}")"
       fi
-      if [ "$i" -eq "$idx" ]; then
+      if [ "$i" -eq "$idx" ] && [ "$focus" = "content" ]; then
         tui_add_sel "$plain"
       else
         tui_add "$plain"
       fi
     done
     tui_blank
-    tui_add_dim "  Up/Down move (the highlighted choice is selected)   Enter = continue   Esc = quit"
+    tui_row_navbuttons "$focus"
+    tui_add_raw "$TUI_ROW"
+    tui_blank
+    if [ "$TUI_ALLOW_BACK" = "1" ]; then tabhint="Tab = Back / Continue"; else tabhint="Tab = Continue"; fi
+    tui_add_dim "  Up/Down move   Space = select   Enter = continue"
+    tui_add_dim "  ${tabhint}   Esc = quit"
     tui_flush "$title"
 
     tui_read_key
     case "$TUI_KEY" in
-      UP|LEFT) idx=$(((idx + n - 1) % n)) ;;
-      DOWN|RIGHT) idx=$(((idx + 1) % n)) ;;
-      ENTER|SPACE|TAB) TUI_RESULT="${tags[$idx]}"; return 0 ;;
+      UP)
+        if [ "$focus" = "content" ]; then idx=$(((idx + n - 1) % n)); fi
+        ;;
+      DOWN)
+        if [ "$focus" = "content" ]; then idx=$(((idx + 1) % n)); fi
+        ;;
+      SPACE)
+        if [ "$focus" = "content" ]; then chosen="$idx"; fi
+        ;;
+      TAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS" ;;
+      BACKTAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS" ;;
+      LEFT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS"; fi
+        ;;
+      RIGHT)
+        if [ "$focus" != "content" ]; then tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS"; fi
+        ;;
+      ENTER)
+        if [ "$focus" = "back" ]; then
+          TUI_BACK="1"
+          return 0
+        fi
+        TUI_RESULT="${tags[$chosen]}"
+        return 0
+        ;;
       ESC) tui_abort_confirm ;;
       EOF) tui_fatal "Terminal closed - setup cancelled." ;;
       *) ;;
@@ -584,30 +702,44 @@ tui_radiolist() {
 # ------------------------------------------------------------ input box
 # tui_input TITLE INTRO DEFAULT [VALIDATOR]
 # VALIDATOR is a function name; it prints an error message when the value
-# is not acceptable (or nothing when it is fine). Result in TUI_RESULT.
+# is not acceptable (or nothing when it is fine). Enter confirms, Tab
+# reaches the Back button. Result in TUI_RESULT; going back in TUI_BACK.
 tui_input() {
-  TUI_RESULT=""
+  TUI_RESULT=""; TUI_BACK=""
   local title="$1" intro="$2" value="$3" validator="${4:-}"
-  local pos=${#value} err
+  local pos=${#value} focus="content" err tabhint
   while :; do
     tui_dims
     tui_begin
     if [ -n "$intro" ]; then tui_add_wrapped "$intro"; fi
     tui_blank
-    tui_row_input "$value" "$pos"
+    if [ "$focus" = "content" ]; then
+      tui_row_input "$value" "$pos"
+    else
+      tui_row_text "$value"
+    fi
     tui_add_raw "$TUI_ROW"
     if [ -n "$TUI_FLASH" ]; then
       tui_blank
       tui_add_err "  ${TUI_FLASH}"
     fi
     tui_blank
-    tui_add_dim "  Type the value   Enter = confirm   Esc = quit"
+    tui_row_navbuttons "$focus"
+    tui_add_raw "$TUI_ROW"
+    tui_blank
+    if [ "$TUI_ALLOW_BACK" = "1" ]; then tabhint="Tab = Back / Continue"; else tabhint="Tab = Continue"; fi
+    tui_add_dim "  Type the value   Enter = confirm"
+    tui_add_dim "  ${tabhint}   Esc = quit"
     tui_flush "$title"
     TUI_FLASH=""
 
     tui_read_key
     case "$TUI_KEY" in
       ENTER)
+        if [ "$focus" = "back" ]; then
+          TUI_BACK="1"
+          return 0
+        fi
         err=""
         if [ -n "$validator" ]; then
           err="$("$validator" "$value" 2>/dev/null || true)"
@@ -619,19 +751,43 @@ tui_input() {
           return 0
         fi
         ;;
-      CHAR) value="${value:0:pos}${TUI_CHAR}${value:pos}"; pos=$((pos + 1)) ;;
-      SPACE) value="${value:0:pos} ${value:pos}"; pos=$((pos + 1)) ;;
+      CHAR)
+        if [ "$focus" = "content" ]; then value="${value:0:pos}${TUI_CHAR}${value:pos}"; pos=$((pos + 1)); fi
+        ;;
+      SPACE)
+        if [ "$focus" = "content" ]; then value="${value:0:pos} ${value:pos}"; pos=$((pos + 1)); fi
+        ;;
       BACKSPACE)
-        if [ "$pos" -gt 0 ]; then
+        if [ "$focus" = "content" ] && [ "$pos" -gt 0 ]; then
           value="${value:0:pos-1}${value:pos}"
           pos=$((pos - 1))
         fi
         ;;
-      CLEAR) value=""; pos=0 ;;
-      LEFT) if [ "$pos" -gt 0 ]; then pos=$((pos - 1)); fi ;;
-      RIGHT) if [ "$pos" -lt "${#value}" ]; then pos=$((pos + 1)); fi ;;
-      HOME) pos=0 ;;
-      END) pos=${#value} ;;
+      CLEAR)
+        if [ "$focus" = "content" ]; then value=""; pos=0; fi
+        ;;
+      LEFT)
+        if [ "$focus" = "content" ]; then
+          if [ "$pos" -gt 0 ]; then pos=$((pos - 1)); fi
+        else
+          tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS"
+        fi
+        ;;
+      RIGHT)
+        if [ "$focus" = "content" ]; then
+          if [ "$pos" -lt "${#value}" ]; then pos=$((pos + 1)); fi
+        else
+          tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS"
+        fi
+        ;;
+      HOME)
+        if [ "$focus" = "content" ]; then pos=0; fi
+        ;;
+      END)
+        if [ "$focus" = "content" ]; then pos=${#value}; fi
+        ;;
+      TAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" 1; focus="$TUI_FOCUS" ;;
+      BACKTAB) tui_focus_cycle "$focus" "$TUI_ALLOW_BACK" -1; focus="$TUI_FOCUS" ;;
       ESC) tui_abort_confirm ;;
       EOF) tui_fatal "Terminal closed - setup cancelled." ;;
       *) ;;
@@ -641,30 +797,48 @@ tui_input() {
 
 # --------------------------------------------------------------- buttons
 # tui_buttons TITLE INTRO DEFAULT_INDEX LABEL [LABEL ...]
-# Left/Right/Tab move, Enter confirms. Result (chosen index) in TUI_RESULT.
+# Left/Right/Tab move the focus, Enter activates the focused button. With
+# TUI_ALLOW_BACK=1 a < Back > button is added in front; activating it sets
+# TUI_BACK. Result (chosen index) in TUI_RESULT.
 tui_buttons() {
-  TUI_RESULT=""
+  TUI_RESULT=""; TUI_BACK=""
   local title="$1" intro="$2" def="$3"; shift 3
-  local -a labels=("$@")
+  local -a labels=("$@") disp=()
   local n=${#labels[@]}
   [ "$n" -gt 0 ] || tui_fatal "tui_buttons: no buttons"
-  local sel="$def"
+  local off=0 total bsel
+  if [ "$TUI_ALLOW_BACK" = "1" ]; then
+    disp=("Back" "${labels[@]}")
+    off=1
+  else
+    disp=("${labels[@]}")
+  fi
+  total=${#disp[@]}
+  bsel=$((off + def))
+
   while :; do
     tui_dims
     tui_begin
     if [ -n "$intro" ]; then tui_add_wrapped "$intro"; fi
     tui_blank
-    tui_row_buttons "$sel" "${labels[@]}"
+    tui_row_buttons "$bsel" "${disp[@]}"
     tui_add_raw "$TUI_ROW"
     tui_blank
-    tui_add_dim "  Left/Right choose   Enter = confirm   Esc = quit"
+    tui_add_dim "  Left/Right move   Enter = confirm   Esc = quit"
     tui_flush "$title"
 
     tui_read_key
     case "$TUI_KEY" in
-      LEFT|UP) sel=$(((sel + n - 1) % n)) ;;
-      RIGHT|DOWN|TAB) sel=$(((sel + 1) % n)) ;;
-      ENTER|SPACE) TUI_RESULT="$sel"; return 0 ;;
+      LEFT|UP|BACKTAB) bsel=$(((bsel + total - 1) % total)) ;;
+      RIGHT|DOWN|TAB) bsel=$(((bsel + 1) % total)) ;;
+      ENTER)
+        if [ "$off" -eq 1 ] && [ "$bsel" -eq 0 ]; then
+          TUI_BACK="1"
+          return 0
+        fi
+        TUI_RESULT=$((bsel - off))
+        return 0
+        ;;
       ESC) tui_abort_confirm ;;
       EOF) tui_fatal "Terminal closed - setup cancelled." ;;
       *) ;;
