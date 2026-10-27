@@ -131,6 +131,28 @@ ensure_user() {
   run chown -R "${SVC_USER}:${SVC_USER}" "$LIB_DIR"
 }
 
+# YouTube bot-walls most Tor exit IPs. The downloader works around a blocked
+# exit by asking Tor for a fresh circuit (SIGNAL NEWNYM over the local control
+# socket), which is group-restricted to `debian-tor` on Debian/Ubuntu. Without
+# this grant the app still runs - it just cannot rotate and keeps retrying the
+# same (possibly flagged) circuit, so every failure here is non-fatal.
+ensure_tor_control_access() {
+  case "${PROXY_MODE:-auto}" in
+    never|off|none|direct) return 0 ;;
+  esac
+  getent group debian-tor >/dev/null 2>&1 || return 0
+  if id -nG "$SVC_USER" 2>/dev/null | tr ' ' '\n' | grep -qx debian-tor; then
+    return 0
+  fi
+
+  info "Allowing '$SVC_USER' to rotate Tor circuits (joining group debian-tor)..."
+  if run usermod -aG debian-tor "$SVC_USER"; then
+    COMPONENT_NOTES+=("Tor circuit rotation access (debian-tor group)")
+  else
+    warn "Could not add '$SVC_USER' to debian-tor - circuit rotation on blocked exits will be unavailable."
+  fi
+}
+
 # --------------------------------------------------------------------- dirs
 ensure_dirs() {
   DATA_DOWNLOADER="$DATA_ROOT/downloader"
@@ -315,6 +337,7 @@ print_final_summary() {
 do_install() {
   ensure_deps
   ensure_user
+  ensure_tor_control_access
   ensure_dirs
   install_app_binaries
   install_services
@@ -458,6 +481,7 @@ do_update() {
   info "Updating: ${APPS// /, }"
   load_settings_from_units
   ensure_deps
+  ensure_tor_control_access
   backup_app_binaries
 
   local dl_bin="$INSTALL_ROOT/downloader/downloader"
